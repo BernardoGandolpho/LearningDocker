@@ -1,5 +1,6 @@
 FROM python:3.8-alpine
 WORKDIR /usr/src/poke_api
+
 ENV MONGODB_URL="mongodb+srv://root-poke-api:7f6904c51f8d51e0a26e7bc36fda27bd@pokemonapi.juwxl.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"
 
 COPY ./requirements.txt /usr/src/poke_api/requirements.txt
