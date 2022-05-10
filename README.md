@@ -1,7 +1,5 @@
 # LearningDocker
 
-sudo docker build -t poke_app .
-
-sudo docker run -it -p 8008:5000 poke_app
+$ docker-compose up
 
 http://0.0.0.0:5000/pokemons/
