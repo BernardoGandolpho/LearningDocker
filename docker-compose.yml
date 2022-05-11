@@ -1,7 +1,9 @@
 version: '2.5.0'
 services:
   web:
+    environment:
+        - mongo_url=${MONGODB_URL}
     build: .
     command: python main.py
     ports:
-      - "5000:8008" 
+      - "8008:8008" 
