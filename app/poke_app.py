@@ -16,6 +16,7 @@ client = motor.motor_asyncio.AsyncIOMotorClient(os.environ["MONGODB_URL"])
 db = client.pokedex
 
 
+# Class to adapt '_id' to python
 class PyObjectId(ObjectId):
     @classmethod
     def __get_validators__(cls):
@@ -32,7 +33,7 @@ class PyObjectId(ObjectId):
         field_schema.update(type="string")
 
 
-# Classes and Models
+# Models for validation
 class Move(BaseModel):
     name: Optional[str] = Field(None, max_length=30)
     power: int = Field(..., ge=0)
@@ -88,8 +89,8 @@ class PokemonModel(BaseModel):
 
 
 class UpdatePokemonModel(BaseModel):
-    name: str = Field(..., min_length=3, max_length=30)
-    types: List[str] = []
+    name: Optional[str] = Field(None, min_length=3, max_length=30)
+    types: Optional[List[str]] = None
     moveset: Optional[List[Move]] = None
 
     class Config:
@@ -125,11 +126,15 @@ async def root():
 
 @app.get("/pokemons")
 async def list_pokemon(
-        skip: Optional[int] = Query(0),
-        limit: Optional[int] = Query(10)):
-        
-    pokemons = await db["pokemons"].find(skip=skip, limit=limit, projection={"_id": False}).sort('pokedex_id').to_list(limit)
-    return pokemons
+        skip: Optional[int] = Query(0, ge=0),
+        limit: Optional[int] = Query(10, gt=0)
+    ):
+    pokemons = await db["pokemons"].find(skip=skip, limit=limit, projection={"_id": False, "moveset": False}).sort('pokedex_id').to_list(limit)
+    
+    if pokemons is not None:
+        return {"pokemons":pokemons}
+    
+    raise HTTPException(status_code=404, detail=f"Pokemon not found")
 
 
 @app.get("/pokemons/{id}")
@@ -137,7 +142,7 @@ async def find_pokemon(id: int = Path(..., gt=0, le=905)):
     pokemon = await db["pokemons"].find_one({"pokedex_id": id}, projection={"_id": False})
 
     if pokemon is not None:
-        return pokemon
+        return {"pokemon":pokemon}
 
     raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
@@ -145,14 +150,18 @@ async def find_pokemon(id: int = Path(..., gt=0, le=905)):
 @app.get("/pokemons/{id}/moveset")
 async def list_moveset(
         id: int = Path(..., gt=0, le=905),
-        skip: Optional[int] = Query(0),
-        limit: Optional[int] = Query(10)):
+        skip: Optional[int] = Query(0, ge=0),
+        limit: Optional[int] = Query(10, gt=0)
+    ):
 
     pokemon = await db["pokemons"].find_one({"pokedex_id": id})
 
     if pokemon is not None:
-        results = pokemon["moveset"][skip : skip + limit]
-        return results
+        name = pokemon["name"]
+        moveset = pokemon["moveset"][skip : skip + limit]
+        if len(moveset) > 0:
+            return {"moveset":moveset}
+        raise HTTPException(status_code=404, detail=f"No moves found from {name}")
 
     raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
@@ -165,11 +174,13 @@ async def find_move(
     pokemon = await db["pokemons"].find_one({"pokedex_id": id})
 
     if pokemon is not None:
+        name = pokemon["name"]
+
         if len(pokemon["moveset"]) > move_id:
             result = pokemon["moveset"][move_id]
             return result
             
-        raise HTTPException(status_code=404, detail=f"Move {move_id} from pokemon {id} not found")
+        raise HTTPException(status_code=404, detail=f"Move {move_id} from {name} was not found")
 
     raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
@@ -183,6 +194,7 @@ async def create_pokemon(pokemon: PokemonModel = Body(...)):
 
     try:
         await db["pokemons"].insert_one(new_pokemon)
+        new_pokemon.pop("_id", None)
         return JSONResponse(status_code=status.HTTP_201_CREATED, content=new_pokemon)
     except:
         raise HTTPException(status_code=500, detail="Internar Server Error")
