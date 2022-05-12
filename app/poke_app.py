@@ -12,7 +12,8 @@ import motor.motor_asyncio
 # App and Database
 app = FastAPI()
 
-client = motor.motor_asyncio.AsyncIOMotorClient(os.environ["MONGODB_URL"])
+mongo_url = "mongodb://" + (os.environ["DB_USER"]) + ":" + os.environ["DB_PASSWORD"] + "@mongodb"
+client = motor.motor_asyncio.AsyncIOMotorClient(mongo_url)
 db = client.pokedex
 
 

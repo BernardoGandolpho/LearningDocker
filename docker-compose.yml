@@ -1,9 +1,16 @@
 version: '2.5.0'
 services:
-  web:
+  api:
     environment:
-        - mongo_url=${MONGODB_URL}
+        - MONGODB_CONNSTRING=mongodb://${DB_USER}:${DB_PASSWORD}@mongodb
     build: .
+    container_name: poke_api
     command: python main.py
     ports:
-      - "8008:8008" 
+      - "8008:8008"
+  mongodb:
+    image: mongo:5.0
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${DB_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${DB_PASSWORD}
+    container_name: poke_db
