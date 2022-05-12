@@ -35,9 +35,9 @@ class PyObjectId(ObjectId):
 
 # Models for validation
 class Move(BaseModel):
-    name: Optional[str] = Field(None, max_length=30)
-    power: int = Field(..., ge=0)
-    accuracy: Optional[float] = Field(1, gt=0, le=1)
+    name: str = Field(..., max_length=30)
+    power: Optional[int] = Field(None, ge=0)
+    accuracy: Optional[float] = Field(None, gt=0, le=1)
     description: Optional[str] = Field(None, max_length=300)
 
     class Config:
@@ -138,29 +138,35 @@ async def list_pokemon(
 
 
 @app.get("/pokemons/{id}")
-async def find_pokemon(id: int = Path(..., gt=0, le=905)):
-    pokemon = await db["pokemons"].find_one({"pokedex_id": id}, projection={"_id": False})
+async def find_pokemon(id: str = Path(..., max_length=30)):
+    if id.isdigit():
+        pokemon = await db["pokemons"].find_one({"pokedex_id": int(id)}, projection={"_id": False, "moveset": False})
+    else:
+        pokemon = await db["pokemons"].find_one({"name": id.title()}, projection={"_id": False, "moveset": False})
 
     if pokemon is not None:
         return {"pokemon":pokemon}
 
-    raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+    raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")   
 
 
 @app.get("/pokemons/{id}/moveset")
 async def list_moveset(
-        id: int = Path(..., gt=0, le=905),
+        id: str = Path(...,max_length=30),
         skip: Optional[int] = Query(0, ge=0),
         limit: Optional[int] = Query(10, gt=0)
     ):
 
-    pokemon = await db["pokemons"].find_one({"pokedex_id": id})
+    if id.isdigit():
+        pokemon = await db["pokemons"].find_one({"pokedex_id": int(id)})
+    else:
+        pokemon = await db["pokemons"].find_one({"name": id.title()})
 
     if pokemon is not None:
         name = pokemon["name"]
         moveset = pokemon["moveset"][skip : skip + limit]
         if len(moveset) > 0:
-            return {"moveset":moveset}
+            return {f"{name} moveset":moveset}
         raise HTTPException(status_code=404, detail=f"No moves found from {name}")
 
     raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
@@ -168,17 +174,20 @@ async def list_moveset(
 
 @app.get("/pokemons/{id}/moveset/{move_id}")
 async def find_move(
-        id: int = Path(..., gt=0, le=905),
+        id: str = Path(..., max_length=30),
         move_id: int = Path(..., ge=0, lt=30)):
 
-    pokemon = await db["pokemons"].find_one({"pokedex_id": id})
+    if id.isdigit():
+        pokemon = await db["pokemons"].find_one({"pokedex_id": int(id)})
+    else:
+        pokemon = await db["pokemons"].find_one({"name": id.title()})
 
     if pokemon is not None:
         name = pokemon["name"]
 
         if len(pokemon["moveset"]) > move_id:
             result = pokemon["moveset"][move_id]
-            return result
+            return {"move": result}
             
         raise HTTPException(status_code=404, detail=f"Move {move_id} from {name} was not found")
 
@@ -188,6 +197,7 @@ async def find_move(
 @app.post("/pokemons", response_model=PokemonModel)
 async def create_pokemon(pokemon: PokemonModel = Body(...)):
     new_pokemon = jsonable_encoder(pokemon)
+    new_pokemon["name"].title()
 
     if (await db["pokemons"].find_one({"pokedex_id": pokemon.pokedex_id})) is not None:
         raise HTTPException(status_code=400, detail="Duplicate pokemon")
@@ -205,6 +215,9 @@ async def update_pokemon(id: int = Path(..., gt=0, le=905), pokemon: UpdatePokem
     pokemon = {k: v for k, v in pokemon.dict().items() if v is not None}
 
     if len(pokemon) >= 1:
+        if "name" in pokemon:
+            pokemon["name"] = pokemon["name"].title()
+
         update_result = await db["pokemons"].update_one({"pokedex_id": id}, {"$set": pokemon})
 
         if update_result.modified_count == 1:
