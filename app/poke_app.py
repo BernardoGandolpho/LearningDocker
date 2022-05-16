@@ -38,8 +38,8 @@ class PyObjectId(ObjectId):
 class Move(BaseModel):
     name: str = Field(..., max_length=30)
     power: Optional[int] = Field(None, ge=0)
-    accuracy: Optional[float] = Field(None, gt=0, le=1)
-    description: Optional[str] = Field(None, max_length=300)
+    accuracy: Optional[float] = Field(None, ge=0, le=1)
+    type: Optional[str] = Field(None)
 
     class Config:
         allow_population_by_field_name = True
@@ -130,7 +130,8 @@ async def list_pokemon(
         skip: Optional[int] = Query(0, ge=0),
         limit: Optional[int] = Query(10, gt=0)
     ):
-    pokemons = await db["pokemons"].find(skip=skip, limit=limit, projection={"_id": False, "moveset": False}).sort('pokedex_id').to_list(limit)
+    pokemons = await db["pokemons"].find(skip=skip, limit=limit,
+        projection={"_id": False, "moveset": False}).sort('pokedex_id').to_list(limit)
     
     if pokemons is not None:
         return {"pokemons":pokemons}
@@ -141,9 +142,11 @@ async def list_pokemon(
 @app.get("/pokemons/{id}")
 async def find_pokemon(id: str = Path(..., max_length=30)):
     if id.isdigit():
-        pokemon = await db["pokemons"].find_one({"pokedex_id": int(id)}, projection={"_id": False, "moveset": False})
+        pokemon = await db["pokemons"].find_one(
+            {"pokedex_id": int(id)}, projection={"_id": False, "moveset": False})
     else:
-        pokemon = await db["pokemons"].find_one({"name": id.title()}, projection={"_id": False, "moveset": False})
+        pokemon = await db["pokemons"].find_one(
+            {"name": id.title()}, projection={"_id": False, "moveset": False})
 
     if pokemon is not None:
         return {"pokemon":pokemon}
