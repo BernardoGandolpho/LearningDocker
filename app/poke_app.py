@@ -1,21 +1,16 @@
-import os
+from os import environ
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Body, Path, Query, status
+from bson import ObjectId
+from fastapi import FastAPI, HTTPException, status, Body, Path, Query, Depends
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
+from pymongo import MongoClient
 from pydantic import BaseModel, Field
-from bson import ObjectId
-import motor.motor_asyncio
 
 
 # App and Database
 app = FastAPI()
-
-mongo_url = "mongodb://" + (os.environ["DB_USER"]) + ":" + os.environ["DB_PASSWORD"] + "@mongodb"
-client = motor.motor_asyncio.AsyncIOMotorClient(mongo_url)
-db = client.pokedex
-
 
 # Class to adapt '_id' to python
 class PyObjectId(ObjectId):
@@ -58,9 +53,9 @@ class Move(BaseModel):
 class PokemonModel(BaseModel):
     id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
     name: str = Field(..., min_length=3, max_length=30)
-    pokedex_id: int = Field(..., gt=0, le=905)
-    types: List[str] = []
-    moveset: Optional[List[Move]] = None
+    pokedex_id: int = Field(..., gt=0, le=809)
+    types: List[str] = Field([])
+    moveset: Optional[List[Move]] = Field([])
 
     class Config:
         allow_population_by_field_name = True
@@ -91,8 +86,8 @@ class PokemonModel(BaseModel):
 
 class UpdatePokemonModel(BaseModel):
     name: Optional[str] = Field(None, min_length=3, max_length=30)
-    types: Optional[List[str]] = None
-    moveset: Optional[List[Move]] = None
+    types: Optional[List[str]] = Field([])
+    moveset: Optional[List[Move]] = Field([])
 
     class Config:
         arbitrary_types_allowed = True
@@ -119,6 +114,61 @@ class UpdatePokemonModel(BaseModel):
         }
 
 
+class PokemonRepository():
+    def __init__(self):
+        self.mongo_url = (f'mongodb://{environ["DB_USER"]}:{environ["DB_PASSWORD"]}@mongodb')
+        self.client = MongoClient(self.mongo_url)
+        self.db = self.client['pokedex']
+
+    def list_all(self, skip, limit, projection):
+        ret = self.db['pokemons'].find(skip=skip, limit=limit,
+            projection=projection).sort('pokedex_id')
+
+        return list(ret)
+
+    def list_one_pokemon(self, id, projection):
+        if str(id).isdigit():
+            ret = self.db['pokemons'].find_one({"pokedex_id": int(id)}, projection=projection)
+        else:
+            ret = self.db['pokemons'].find_one({"name": id.title()}, projection=projection)
+
+        return ret
+
+    def add(self, pokemon: PokemonModel):
+        if (self.list_one_pokemon(id=pokemon['pokedex_id'], projection={"pokedex_id": True})) is not None:
+            return HTTPException(status_code=400, detail="Duplicate pokemon")
+        
+        try:
+            self.db["pokemons"].insert_one(pokemon)
+            pokemon.pop("_id", None)
+
+            return JSONResponse(status_code=status.HTTP_201_CREATED, content=pokemon)
+        
+        except:
+            return HTTPException(status_code=500, detail="Internar Server Error")
+
+    def update(self, pokemon: UpdatePokemonModel, id):
+        if (self.list_one_pokemon(id=id, projection={"pokedex_id": True})) is not None:
+            pokemon = {k: v for k, v in pokemon.dict().items() if v is not None and v != []}     
+
+            try:
+                self.db["pokemons"].update_one({"pokedex_id": id}, {"$set": pokemon})
+                
+                return self.list_one_pokemon(id, {'_id': False})
+
+            except:
+                return HTTPException(status_code=500, detail="Internal Server Error")
+        return HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+
+    def remove(self, id):
+        delete_result = self.db["pokemons"].delete_one({"pokedex_id": id})
+
+        if delete_result.deleted_count == 1:
+            return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content={})
+
+        raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+
+
 # Routes
 @app.get("/")
 async def root():
@@ -126,13 +176,14 @@ async def root():
 
 
 @app.get("/pokemons")
-async def list_pokemon(
+def list_pokemon(
         skip: Optional[int] = Query(0, ge=0),
-        limit: Optional[int] = Query(10, gt=0)
+        limit: Optional[int] = Query(10, gt=0),
+        repository: PokemonRepository = Depends(PokemonRepository)
     ):
-    pokemons = await db["pokemons"].find(skip=skip, limit=limit,
-        projection={"_id": False, "moveset": False}).sort('pokedex_id').to_list(limit)
-    
+
+    pokemons = repository.list_all(skip, limit, {"_id": False, "moveset": False})
+
     if pokemons is not None:
         return {"pokemons":pokemons}
     
@@ -140,13 +191,12 @@ async def list_pokemon(
 
 
 @app.get("/pokemons/{id}")
-async def find_pokemon(id: str = Path(..., max_length=30)):
-    if id.isdigit():
-        pokemon = await db["pokemons"].find_one(
-            {"pokedex_id": int(id)}, projection={"_id": False, "moveset": False})
-    else:
-        pokemon = await db["pokemons"].find_one(
-            {"name": id.title()}, projection={"_id": False, "moveset": False})
+def find_pokemon(
+        id: str = Path(..., max_length=30),
+        repository: PokemonRepository = Depends(PokemonRepository)
+    ):
+
+    pokemon = repository.list_one_pokemon(id=id, projection={"_id": False, "moveset": False})
 
     if pokemon is not None:
         return {"pokemon":pokemon}
@@ -155,23 +205,21 @@ async def find_pokemon(id: str = Path(..., max_length=30)):
 
 
 @app.get("/pokemons/{id}/moveset")
-async def list_moveset(
+def list_moveset(
         id: str = Path(...,max_length=30),
         skip: Optional[int] = Query(0, ge=0),
-        limit: Optional[int] = Query(10, gt=0)
+        limit: Optional[int] = Query(10, gt=0),
+        repository: PokemonRepository = Depends(PokemonRepository)
     ):
 
-    if id.isdigit():
-        pokemon = await db["pokemons"].find_one({"pokedex_id": int(id)})
-    else:
-        pokemon = await db["pokemons"].find_one({"name": id.title()})
-
+    pokemon = repository.list_one_pokemon(id=id, projection={"_id": False, "moveset": True})
+    
     if pokemon is not None:
-        name = pokemon["name"]
         moveset = pokemon["moveset"][skip : skip + limit]
+
         if len(moveset) > 0:
-            return {f"{name} moveset":moveset}
-        raise HTTPException(status_code=404, detail=f"No moves found from {name}")
+            return {"moveset":moveset}
+        raise HTTPException(status_code=404, detail=f"No moves found from pokemon {id}")
 
     raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
@@ -179,69 +227,64 @@ async def list_moveset(
 @app.get("/pokemons/{id}/moveset/{move_id}")
 async def find_move(
         id: str = Path(..., max_length=30),
-        move_id: int = Path(..., ge=0, lt=30)):
+        move_id: int = Path(..., ge=0, lt=30),
+        repository: PokemonRepository = Depends(PokemonRepository)
+):
 
-    if id.isdigit():
-        pokemon = await db["pokemons"].find_one({"pokedex_id": int(id)})
-    else:
-        pokemon = await db["pokemons"].find_one({"name": id.title()})
+    pokemon = repository.list_one_pokemon(id=id, projection={"_id": False, "moveset": True})
 
     if pokemon is not None:
-        name = pokemon["name"]
-
         if len(pokemon["moveset"]) > move_id:
             result = pokemon["moveset"][move_id]
             return {"move": result}
             
-        raise HTTPException(status_code=404, detail=f"Move {move_id} from {name} was not found")
+        raise HTTPException(status_code=404, detail=f"Move {move_id} from pokemon {id} was not found")
 
     raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
 
 @app.post("/pokemons", response_model=PokemonModel)
-async def create_pokemon(pokemon: PokemonModel = Body(...)):
+def create_pokemon(
+        pokemon: PokemonModel = Body(...),
+        repository: PokemonRepository = Depends(PokemonRepository)
+):
     new_pokemon = jsonable_encoder(pokemon)
-    new_pokemon["name"].title()
+    new_pokemon["name"] = new_pokemon["name"].title()
+    
+    ret = repository.add(new_pokemon)
 
-    if (await db["pokemons"].find_one({"pokedex_id": pokemon.pokedex_id})) is not None:
-        raise HTTPException(status_code=400, detail="Duplicate pokemon")
+    if type(ret) is type(HTTPException(status_code=400)):
+        raise ret
 
-    try:
-        await db["pokemons"].insert_one(new_pokemon)
-        new_pokemon.pop("_id", None)
-        return JSONResponse(status_code=status.HTTP_201_CREATED, content=new_pokemon)
-    except:
-        raise HTTPException(status_code=500, detail="Internar Server Error")
+    return ret
 
 
 @app.put("/pokemons/{id}", response_model=PokemonModel)
-async def update_pokemon(id: int = Path(..., gt=0, le=905), pokemon: UpdatePokemonModel = Body(...)):
-    pokemon = {k: v for k, v in pokemon.dict().items() if v is not None}
+def update_pokemon(
+        id: int = Path(..., gt=0, le=809),
+        pokemon: UpdatePokemonModel = Body(...),
+        repository: PokemonRepository = Depends(PokemonRepository)
+):
+    if pokemon.name is not None:
+        pokemon.name = pokemon.name.title()
 
-    if len(pokemon) >= 1:
-        if "name" in pokemon:
-            pokemon["name"] = pokemon["name"].title()
+    ret = repository.update(pokemon, id)
 
-        update_result = await db["pokemons"].update_one({"pokedex_id": id}, {"$set": pokemon})
+    if type(ret) is type(HTTPException(status_code=400)):
+        raise ret
 
-        if update_result.modified_count == 1:
-            if (
-                updated_pokemon := await db["pokemons"].find_one({"pokedex_id": id})
-            ) is not None:
-                return updated_pokemon
-
-    if (existing_pokemon := await db["pokemons"].find_one({"pokedex_id": id})) is not None:
-        return existing_pokemon
-
-    raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+    return ret
 
 
 @app.delete("/pokemons/{id}")
-async def delete_pokemon(id: int = Path(..., gt=0, le=905)):
+def delete_pokemon(
+        id: int = Path(..., gt=0, le=809),
+        repository: PokemonRepository = Depends(PokemonRepository)
+):
 
-    delete_result = await db["pokemons"].delete_one({"pokedex_id": id})
+    ret = repository.remove(id)
 
-    if delete_result.deleted_count == 1:
-        return JSONResponse(status_code=status.HTTP_204_NO_CONTENT)
+    if type(ret) is type(HTTPException(status_code=400)):
+        raise ret
 
-    raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+    return ret

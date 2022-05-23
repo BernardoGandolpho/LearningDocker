@@ -10,6 +10,4 @@ libressl-dev libffi-dev gcc musl-dev python3-dev \
 && pip install -r /usr/src/poke_api/requirements.txt \
 && rm -rf /root/.cache/pip
 
-EXPOSE 8008
 COPY . /usr/src/poke_api
-CMD ["python", "main.py"]
