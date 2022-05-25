@@ -68,7 +68,7 @@ def list_moveset(
 
 
 @app.get("/pokemons/{id}/moveset/{move_id}")
-async def find_move(
+def find_move(
         id: str = Path(..., max_length=30),
         move_id: int = Path(..., ge=0, lt=30),
         repository: PokemonRepository = Depends(PokemonRepository)
