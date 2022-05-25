@@ -121,18 +121,16 @@ class PokemonRepository():
         self.db = self.client['pokedex']
 
     def list_all(self, skip, limit, projection):
-        ret = self.db['pokemons'].find(skip=skip, limit=limit,
+        pokemons = self.db['pokemons'].find(skip=skip, limit=limit,
             projection=projection).sort('pokedex_id')
 
-        return list(ret)
+        return list(pokemons)
 
     def list_one_pokemon(self, id, projection):
         if str(id).isdigit():
-            ret = self.db['pokemons'].find_one({"pokedex_id": int(id)}, projection=projection)
+            return self.db['pokemons'].find_one({"pokedex_id": int(id)}, projection=projection)
         else:
-            ret = self.db['pokemons'].find_one({"name": id.title()}, projection=projection)
-
-        return ret
+            return self.db['pokemons'].find_one({"name": id.title()}, projection=projection)
 
     def add(self, pokemon: PokemonModel):
         if (self.list_one_pokemon(id=pokemon['pokedex_id'], projection={"pokedex_id": True})) is not None:
@@ -148,17 +146,18 @@ class PokemonRepository():
             return HTTPException(status_code=500, detail="Internar Server Error")
 
     def update(self, pokemon: UpdatePokemonModel, id):
-        if (self.list_one_pokemon(id=id, projection={"pokedex_id": True})) is not None:
-            pokemon = {k: v for k, v in pokemon.dict().items() if v is not None and v != []}     
+        if (self.list_one_pokemon(id=id, projection={"pokedex_id": True})) is None:
+            return HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
-            try:
-                self.db["pokemons"].update_one({"pokedex_id": id}, {"$set": pokemon})
-                
-                return self.list_one_pokemon(id, {'_id': False})
+        pokemon = {k: v for k, v in pokemon.dict().items() if v is not None and v != []}     
 
-            except:
-                return HTTPException(status_code=500, detail="Internal Server Error")
-        return HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+        try:
+            self.db["pokemons"].update_one({"pokedex_id": id}, {"$set": pokemon})
+            
+            return self.list_one_pokemon(id, {'_id': False})
+
+        except:
+            return HTTPException(status_code=500, detail="Internal Server Error")
 
     def remove(self, id):
         delete_result = self.db["pokemons"].delete_one({"pokedex_id": id})
@@ -185,7 +184,7 @@ def list_pokemon(
     pokemons = repository.list_all(skip, limit, {"_id": False, "moveset": False})
 
     if pokemons is not None:
-        return {"pokemons":pokemons}
+        return {"pokemons": pokemons}
     
     raise HTTPException(status_code=404, detail=f"Pokemon not found")
 
@@ -198,10 +197,10 @@ def find_pokemon(
 
     pokemon = repository.list_one_pokemon(id=id, projection={"_id": False, "moveset": False})
 
-    if pokemon is not None:
-        return {"pokemon":pokemon}
-
-    raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")   
+    if pokemon is None:
+        raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")  
+    
+    return {"pokemon":pokemon} 
 
 
 @app.get("/pokemons/{id}/moveset")
@@ -214,14 +213,15 @@ def list_moveset(
 
     pokemon = repository.list_one_pokemon(id=id, projection={"_id": False, "moveset": True})
     
-    if pokemon is not None:
-        moveset = pokemon["moveset"][skip : skip + limit]
+    if pokemon is None:
+        raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
-        if len(moveset) > 0:
-            return {"moveset":moveset}
-        raise HTTPException(status_code=404, detail=f"No moves found from pokemon {id}")
+    moveset = pokemon["moveset"][skip : skip + limit]
 
-    raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+    if len(moveset) > 0:
+        return {"moveset":moveset}
+        
+    raise HTTPException(status_code=404, detail=f"No moves found from pokemon {id}")
 
 
 @app.get("/pokemons/{id}/moveset/{move_id}")
@@ -229,18 +229,18 @@ async def find_move(
         id: str = Path(..., max_length=30),
         move_id: int = Path(..., ge=0, lt=30),
         repository: PokemonRepository = Depends(PokemonRepository)
-):
+    ):
 
     pokemon = repository.list_one_pokemon(id=id, projection={"_id": False, "moveset": True})
 
-    if pokemon is not None:
-        if len(pokemon["moveset"]) > move_id:
-            result = pokemon["moveset"][move_id]
-            return {"move": result}
-            
-        raise HTTPException(status_code=404, detail=f"Move {move_id} from pokemon {id} was not found")
+    if pokemon is None:
+        raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
 
-    raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+    if len(pokemon["moveset"]) > move_id:
+        result = pokemon["moveset"][move_id]
+        return {"move": result}
+        
+    raise HTTPException(status_code=404, detail=f"Move {move_id} from pokemon {id} was not found")
 
 
 @app.post("/pokemons", response_model=PokemonModel)
@@ -251,12 +251,12 @@ def create_pokemon(
     new_pokemon = jsonable_encoder(pokemon)
     new_pokemon["name"] = new_pokemon["name"].title()
     
-    ret = repository.add(new_pokemon)
+    response = repository.add(new_pokemon)
 
-    if type(ret) is type(HTTPException(status_code=400)):
-        raise ret
+    if type(response) is type(HTTPException(status_code=400)):
+        raise response
 
-    return ret
+    return response
 
 
 @app.put("/pokemons/{id}", response_model=PokemonModel)
@@ -268,12 +268,12 @@ def update_pokemon(
     if pokemon.name is not None:
         pokemon.name = pokemon.name.title()
 
-    ret = repository.update(pokemon, id)
+    response = repository.update(pokemon, id)
 
-    if type(ret) is type(HTTPException(status_code=400)):
-        raise ret
+    if type(response) is type(HTTPException(status_code=400)):
+        raise response
 
-    return ret
+    return response
 
 
 @app.delete("/pokemons/{id}")
@@ -282,9 +282,9 @@ def delete_pokemon(
         repository: PokemonRepository = Depends(PokemonRepository)
 ):
 
-    ret = repository.remove(id)
+    response = repository.remove(id)
 
-    if type(ret) is type(HTTPException(status_code=400)):
-        raise ret
+    if type(response) is type(HTTPException(status_code=400)):
+        raise response
 
-    return ret
+    return response
