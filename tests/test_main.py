@@ -5,12 +5,12 @@ from fastapi.testclient import TestClient
 from app.poke_app import app
 
 
-# TODO -> Create tests for Pydantic's validation
-# TODO -> Create tests for skip and limit parameters
-# TODO -> Create tests for not found items
+# TODO -> Divide test functions in separate files
+# TODO -> Create Data File for the objects in requests' bodies
 
 
 load_dotenv("/usr/src/poke_api/.env")
+
 
 client = TestClient(app)
 
@@ -49,6 +49,7 @@ def test_create_existing_pokemon():
     }
     response = client.post("/pokemons", json=data)
     assert response.status_code == 400
+    assert response.json() == {'detail': 'Duplicate pokemon'}
 
 
 def test_update_pokemon():
@@ -57,11 +58,13 @@ def test_update_pokemon():
     }
     response = client.put("/pokemons/1", json=data)
     assert response.status_code == 200
+    assert response.json()['name'] == 'Binho'
 
 
 def test_delete_pokemon():
     response = client.delete("/pokemons/1")
     assert response.status_code == 204
+    assert response.json() == {}
 
 
 def test_create_pokemon():
@@ -508,3 +511,218 @@ def test_create_pokemon():
     }
     response = client.post("/pokemons", json=data)
     assert response.status_code == 201
+    assert response.json()['name'] == 'Bulbasaur'
+
+
+# THIS MUST BE SENT TO ANOTHER FILE Ծ_Ծ 
+
+def test_pokemon_not_found():
+    response = client.get("/pokemons/2000")
+    assert response.status_code == 404
+    assert response.json() == {'detail': 'Pokemon 2000 not found'}
+
+
+def test_move_not_found():
+    response = client.get("/pokemons/1/moveset/2000")
+    assert response.status_code == 404
+    assert response.json() == {'detail': 'Move 2000 from pokemon 1 was not found'}
+
+
+def test_limit():
+    response = client.get("/pokemons?limit=1")
+    assert response.status_code == 200
+    assert len(response.json()['pokemons']) == 1
+
+    response = client.get("/pokemons")
+    assert response.status_code == 200
+    assert len(response.json()['pokemons']) == 10
+
+    response = client.get("/pokemons?limit=100")
+    assert response.status_code == 200
+    assert len(response.json()['pokemons']) == 100
+
+    response = client.get("/pokemons/1/moveset?limit=1")
+    assert response.status_code == 200
+    assert len(response.json()['moveset']) == 1
+
+    response = client.get("/pokemons/1/moveset")
+    assert response.status_code == 200
+    assert len(response.json()['moveset']) == 10
+
+    response = client.get("/pokemons/1/moveset?limit=100")
+    assert response.status_code == 200
+    assert len(response.json()['moveset']) > 10
+
+
+def test_skip():
+    response = client.get("/pokemons?skip=10")
+    assert response.status_code == 200
+    assert response.json()['pokemons'][0]['pokedex_id'] > 10
+
+
+def test_post_validation():
+    data = {
+        "name": "NameThatHasMoreThan30CharactersToTestPydanticValidation",
+        "pokedex_id": 1000,
+        "types": "Grass",
+        "moveset": [
+            {
+                "name": "NameThatHasMoreThan30CharactersToTestPydanticValidation",
+                "power": -1000,
+                "accuracy": 1000
+            }
+        ]
+    }
+    response = client.post("/pokemons", json=data)
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": [
+            {
+                "loc": [
+                    "body",
+                    "name"
+                ],
+                "msg": "ensure this value has at most 30 characters",
+                "type": "value_error.any_str.max_length",
+                "ctx": {
+                    "limit_value": 30
+                }
+            },
+            {
+                "loc": [
+                    "body",
+                    "pokedex_id"
+                ],
+                "msg": "ensure this value is less than or equal to 809",
+                "type": "value_error.number.not_le",
+                "ctx": {
+                    "limit_value": 809
+                }
+            },
+            {
+                "loc": [
+                    "body",
+                    "types"
+                ],
+                "msg": "value is not a valid list",
+                "type": "type_error.list"
+            },
+            {
+                "loc": [
+                    "body",
+                    "moveset",
+                    0,
+                    "name"
+                ],
+                "msg": "ensure this value has at most 30 characters",
+                "type": "value_error.any_str.max_length",
+                "ctx": {
+                    "limit_value": 30
+                }
+            },
+            {
+                "loc": [
+                    "body",
+                    "moveset",
+                    0,
+                    "power"
+                ],
+                "msg": "ensure this value is greater than or equal to 0",
+                "type": "value_error.number.not_ge",
+                "ctx": {
+                    "limit_value": 0
+                }
+            },
+            {
+                "loc": [
+                    "body",
+                    "moveset",
+                    0,
+                    "accuracy"
+                ],
+                "msg": "ensure this value is less than or equal to 1",
+                "type": "value_error.number.not_le",
+                "ctx": {
+                    "limit_value": 1
+                }
+            }
+        ]
+    }
+
+
+def test_put_validation():
+    data = {
+        "name": "NameThatHasMoreThan30CharactersToTestPydanticValidation",
+        "types": "Grass",
+        "moveset": [
+            {
+                "name": "NameThatHasMoreThan30CharactersToTestPydanticValidation",
+                "power": -1000,
+                "accuracy": 1000
+            }
+        ]
+    }
+    response = client.put("/pokemons/1", json=data)
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": [
+            {
+                "loc": [
+                    "body",
+                    "name"
+                ],
+                "msg": "ensure this value has at most 30 characters",
+                "type": "value_error.any_str.max_length",
+                "ctx": {
+                    "limit_value": 30
+                }
+            },
+            {
+                "loc": [
+                    "body",
+                    "types"
+                ],
+                "msg": "value is not a valid list",
+                "type": "type_error.list"
+            },
+            {
+                "loc": [
+                    "body",
+                    "moveset",
+                    0,
+                    "name"
+                ],
+                "msg": "ensure this value has at most 30 characters",
+                "type": "value_error.any_str.max_length",
+                "ctx": {
+                    "limit_value": 30
+                }
+            },
+            {
+                "loc": [
+                    "body",
+                    "moveset",
+                    0,
+                    "power"
+                ],
+                "msg": "ensure this value is greater than or equal to 0",
+                "type": "value_error.number.not_ge",
+                "ctx": {
+                    "limit_value": 0
+                }
+            },
+            {
+                "loc": [
+                    "body",
+                    "moveset",
+                    0,
+                    "accuracy"
+                ],
+                "msg": "ensure this value is less than or equal to 1",
+                "type": "value_error.number.not_le",
+                "ctx": {
+                    "limit_value": 1
+                }
+            }
+        ]
+    }
