@@ -10,7 +10,7 @@ from app.poke_app import app
 # TODO -> Create tests for not found items
 
 
-load_dotenv()
+load_dotenv("/usr/src/poke_api/.env")
 
 client = TestClient(app)
 
