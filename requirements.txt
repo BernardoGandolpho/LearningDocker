@@ -11,3 +11,7 @@ sniffio==1.2.0
 starlette==0.19.1
 typing-extensions==4.2.0
 uvicorn==0.17.6
+
+# dev
+pytest==7.1.2
+requests==2.27.1

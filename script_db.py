@@ -43,7 +43,7 @@ def get_moves(max_move_id, source_url):
     return moves
 
 
-def post_all(max_pokedex_id, max_move_id, source_url, my_url, moves):
+def post_all(max_pokedex_id, max_move_id, source_url, my_url):
     moves = get_moves(max_move_id, source_url)
 
     for i in range (1, max_pokedex_id+1):

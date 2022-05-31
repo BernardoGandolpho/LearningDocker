@@ -37,7 +37,7 @@ class Move(BaseModel):
                 "name": "Quick Attack",
                 "power": 40,
                 "accuracy": 1,
-                "description": "Quick Attack inflicts damage. It has a priority of +1, so it is used before all moves that do not have increased priority.",
+                "type": "Water"
             }
         }
 
@@ -64,12 +64,14 @@ class PokemonModel(BaseModel):
                     {
                         "name": "Water Gun",
                         "power": 40,
-                        "accuracy": 1
+                        "accuracy": 1,
+                        "type": "Water"
                     },
                     {
                         "name": "Aqua Tail",
                         "power": 90,
-                        "accuracy": 0.9
+                        "accuracy": 0.9,
+                        "type": "Water"
                     }
                 ]
             }
@@ -94,12 +96,14 @@ class UpdatePokemonModel(BaseModel):
                     {
                         "name": "Water Gun",
                         "power": 40,
-                        "accuracy": 1
+                        "accuracy": 1,
+                        "type": "Water"
                     },
                     {
                         "name": "Aqua Tail",
                         "power": 90,
-                        "accuracy": 0.9
+                        "accuracy": 0.9,
+                        "type": "Water"
                     }
                 ]
             }

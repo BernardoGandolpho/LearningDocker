@@ -35,3 +35,9 @@ Em todo os casos que retorna uma lista de objetos, o limite definido é de 10 it
 
 Por fim, outras operações CRUD como create, update e delete podem ser realizados com requisições http, seguindo o formato indicado na documentação da api:
 - http://0.0.0.0:8008/docs
+
+
+Para realizar a bateria de testes, execute no terminal o comando;
+```
+docker-compose exec api pytest
+```
