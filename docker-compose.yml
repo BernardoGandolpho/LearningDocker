@@ -7,7 +7,7 @@ services:
     container_name: poke_api
     command: python main.py
     ports:
-      - "8008:8008"
+      - "7999:7999"
   mongodb:
     image: mongo:5.0
     environment:

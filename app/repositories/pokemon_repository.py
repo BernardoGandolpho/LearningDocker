@@ -57,4 +57,4 @@ class PokemonRepository():
         if delete_result.deleted_count == 1:
             return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content={})
 
-        raise HTTPException(status_code=404, detail=f"Pokemon {id} not found")
+        return HTTPException(status_code=404, detail=f"Pokemon {id} not found")
